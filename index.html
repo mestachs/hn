@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hacker News — No‑AI</title>
+  <style>
+    :root {
+      --bg: #0b1220;        /* deep blue */
+      --card: #111827;      /* slate-900 */
+      --muted: #94a3b8;     /* slate-400 */
+      --text: #e5e7eb;      /* gray-200 */
+      --accent: #f59e0b;    /* amber-500 */
+      --link: #60a5fa;      /* blue-400 */
+      --ok: #10b981;        /* emerald-500 */
+      --bad: #ef4444;       /* red-500 */
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text); background: radial-gradient(1200px 800px at 10% -10%, #172036 0%, var(--bg) 60%);
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px);
+      background: rgba(11,18,32,0.7); border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 14px 16px; }
+    .title { display: flex; align-items: center; gap: 12px; font-weight: 700; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+    .controls { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; margin-top: 10px; }
+    select, input, button {
+      background: var(--card); color: var(--text); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 10px 12px; font: inherit;
+    }
+    button { cursor: pointer; }
+    main { padding: 18px 16px 80px; }
+    ul#list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+    .item { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 12px; }
+    .item:hover { background: rgba(255,255,255,0.04); }
+    .row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .rank { width: 30px; text-align: right; color: var(--muted); }
+    .domain { color: var(--muted); font-size: 12px; }
+    .meta { color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pill { font-size: 11px; padding: 2px 8px; border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; color: var(--muted); }
+    .hidden-ai { opacity: 0.7; text-decoration: line-through; }
+    .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
+    footer { color: var(--muted); text-align: center; padding: 18px; border-top: 1px dashed rgba(255,255,255,0.08); }
+    .small { font-size: 12px; color: var(--muted); }
+    .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display:inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg);} }
+    .checkbox { display:flex; align-items:center; gap:6px; font-size:13px; color: var(--muted); }
+    @media (max-width:640px){ .controls{ grid-template-columns: 1fr 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="title">
+        <div class="dot" title="Live"></div>
+        <div>Hacker News — <span style="color:var(--accent)">No‑AI</span></div>
+      </div>
+      <div class="controls">
+        <select id="feed">
+          <option value="topstories">Top</option>
+          <option value="newstories">New</option>
+          <option value="beststories">Best</option>
+          <option value="askstories">Ask</option>
+          <option value="showstories">Show</option>
+          <option value="jobstories">Jobs</option>
+        </select>
+        <input id="perPage" type="number" value="30" min="10" max="100" step="5" title="Items per page" />
+        <div class="checkbox"><input id="showFiltered" type="checkbox" /> <label for="showFiltered">show hidden AI posts</label></div>
+        <button id="refresh">Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="status" class="small"></div>
+    <ul id="list"></ul>
+    <div class="pagination">
+      <button id="prev">Prev</button>
+      <span id="pageLabel" class="small"></span>
+      <button id="next">Next</button>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap small">
+      Built with the public Hacker News Firebase API. Filters common AI keywords/domains client‑side. No tracking.
+    </div>
+  </footer>
+
+<script>
+(function(){
+  const API = 'https://hacker-news.firebaseio.com/v0';
+  const listEl = document.getElementById('list');
+  const statusEl = document.getElementById('status');
+  const feedSel = document.getElementById('feed');
+  const perPageInput = document.getElementById('perPage');
+  const showFiltered = document.getElementById('showFiltered');
+  const btnPrev = document.getElementById('prev');
+  const btnNext = document.getElementById('next');
+  const pageLabel = document.getElementById('pageLabel');
+  const btnRefresh = document.getElementById('refresh');
+
+  const AI_WORDS = [
+    /\bAI\b/i,
+    /artificial intelligence/i,
+    /machine learning|deep learning|ML\b/i,
+    /LLM\b|large language model/i,
+    /GPT\b|ChatGPT|OpenAI/i,
+    /Anthropic|Claude\b/i,
+    /DeepMind|Google\s*AI|Gemini|PaLM|Bard\b/i,
+    /Llama\b|Ollama\b/i,
+    /Stable Diffusion|Midjourney|diffusion model/i,
+    /Mistral\b|Perplexity\b|x\.ai|Grok\b/i,
+    /Hugging\s*Face/i,
+    /transformer\b|fine[- ]?tune|prompt\b|RAG\b|embeddings?/i,
+    /copilot|co-pilot/i,
+    /deepfake/i,
+  ];
+  const AI_DOMAINS = [
+    'openai.com','anthropic.com','deepmind.com','ai.google','makersuite.google','huggingface.co','mistral.ai','perplexity.ai','x.ai','stability.ai','replicate.com','cohere.com','openrouter.ai','ollama.com','langchain','lmstudio.ai','cursor.so','aider.chat'
+  ];
+
+  const state = {
+    ids: [],
+    items: new Map(),
+    page: 1,
+    feed: localStorage.getItem('hn_noai_feed') || 'topstories',
+    perPage: parseInt(localStorage.getItem('hn_noai_perPage') || '30', 10),
+    showFiltered: localStorage.getItem('hn_noai_showFiltered') === '1'
+  };
+
+  feedSel.value = state.feed;
+  perPageInput.value = String(state.perPage);
+  showFiltered.checked = state.showFiltered;
+
+  feedSel.addEventListener('change', () => { state.feed = feedSel.value; state.page = 1; persist(); load(); });
+  perPageInput.addEventListener('change', () => { state.perPage = clamp(parseInt(perPageInput.value,10)||30,10,100); state.page=1; persist(); render(); });
+  showFiltered.addEventListener('change', () => { state.showFiltered = showFiltered.checked; persist(); render(); });
+  btnPrev.addEventListener('click', () => { if(state.page>1){ state.page--; render(); } });
+  btnNext.addEventListener('click', () => { const max = Math.ceil(state.ids.length/state.perPage)||1; if(state.page<max){ state.page++; render(); } });
+  btnRefresh.addEventListener('click', () => { load(true); });
+
+  function persist(){
+    localStorage.setItem('hn_noai_feed', state.feed);
+    localStorage.setItem('hn_noai_perPage', String(state.perPage));
+    localStorage.setItem('hn_noai_showFiltered', state.showFiltered ? '1' : '0');
+  }
+
+  function clamp(n,min,max){ return Math.min(max, Math.max(min, n)); }
+
+  async function fetchJSON(url){
+    const r = await fetch(url, { cache: 'no-store' });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }
+
+  async function load(force=false){
+    setStatus('Loading… <span class="spinner"></span>');
+    try {
+      if(force) state.items.clear();
+      state.ids = await fetchJSON(`${API}/${state.feed}.json`);
+      render();
+      // prefetch current page items
+      const ids = currentPageIds();
+      await Promise.all(ids.map(getItem));
+      render();
+      setStatus(`${state.ids.length} ids • ${visibleItemsCount()} shown`);
+    } catch(e){
+      setStatus(`<span style="color:var(--bad)">Error:</span> ${escapeHTML(String(e.message||e))}`);
+    }
+  }
+
+  async function getItem(id){
+    if(state.items.has(id)) return state.items.get(id);
+    const item = await fetchJSON(`${API}/item/${id}.json`);
+    state.items.set(id, item);
+    return item;
+  }
+
+  function isAINews(item){
+    const title = (item && item.title) ? item.title : '';
+    const url = (item && item.url) ? item.url : '';
+    const host = url ? new URL(url).hostname : '';
+    if(AI_DOMAINS.some(d => host.includes(d))) return true;
+    return AI_WORDS.some(rx => rx.test(title) || rx.test(url));
+  }
+
+  function currentPageIds(){
+    const start = (state.page-1) * state.perPage;
+    return state.ids.slice(start, start + state.perPage);
+  }
+
+  function visibleItemsCount(){
+    let count = 0;
+    for(const id of state.ids){
+      const it = state.items.get(id);
+      if(!it) continue;
+      if(state.showFiltered || !isAINews(it)) count++;
+    }
+    return count;
+  }
+
+  function render(){
+    const ids = currentPageIds();
+    pageLabel.textContent = `Page ${state.page} / ${Math.max(1, Math.ceil(state.ids.length / state.perPage))}`;
+    listEl.innerHTML = '';
+
+    ids.forEach((id, i) => {
+      const item = state.items.get(id);
+      const rank = (state.page-1)*state.perPage + i + 1;
+
+      const li = document.createElement('li');
+      li.className = 'item';
+
+      if(!item){
+        li.innerHTML = `<div class="row"><div class="rank">${rank}.</div><div>Loading…</div></div>`;
+        listEl.appendChild(li);
+        // lazy load missing
+        getItem(id).then(()=>render());
+        return;
+      }
+
+      const hidden = isAINews(item);
+      if(!state.showFiltered && hidden) return; // skip entirely
+
+      const title = escapeHTML(item.title || '(no title)');
+      const url = item.url || `https://news.ycombinator.com/item?id=${item.id}`;
+      const host = hostFromUrl(url);
+      const by = escapeHTML(item.by || '');
+      const time = timeAgo(item.time*1000);
+      const points = item.score ?? 0;
+      const comm = item.descendants ?? 0;
+
+      li.innerHTML = `
+        <div class="row ${hidden ? 'hidden-ai' : ''}">
+          <div class="rank">${rank}.</div>
+          <div style="flex:1 1 auto">
+            <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
+            ${host ? `<span class="domain">(${escapeHTML(host)})</span>` : ''}
+          </div>
+          ${hidden ? `<span class="pill" title="Filtered by AI keywords">AI filtered</span>` : ''}
+        </div>
+        <div class="meta">
+          <span>${points} points</span>
+          <span>by ${by}</span>
+          <span>${time}</span>
+          <a href="https://news.ycombinator.com/item?id=${item.id}" target="_blank" rel="noopener noreferrer">${comm} comments</a>
+          <span class="pill">${escapeHTML(item.type||'story')}</span>
+        </div>
+      `;
+
+      listEl.appendChild(li);
+    });
+  }
+
+  function hostFromUrl(url){ try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ''; } }
+  function setStatus(html){ statusEl.innerHTML = html; }
+  function escapeHTML(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  function timeAgo(ts){
+    const s = Math.floor((Date.now()-ts)/1000);
+    const units = [
+      ['y', 31536000], ['mo', 2592000], ['d', 86400], ['h', 3600], ['m', 60], ['s', 1]
+    ];
+    for(const [u, v] of units){ if(s >= v) return Math.floor(s/v) + ' ' + u + ' ago'; }
+    return 'just now';
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>
