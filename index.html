@@ -252,7 +252,9 @@
         const btnRefresh = document.getElementById("refresh");
 
         const AI_WORDS = [
+          /Agents.*|Agentic/i,
           /(?:^|\\W)AI(?:$|\\W)/i,
+          /AI\b|\bAI\b/i,
           /artificial intelligence/i,
           /machine learning|deep learning|\bML\b/i,
           /LLMs|LLM\b|large language model/i,
@@ -285,8 +287,9 @@
           "langchain",
           "lmstudio.ai",
           "cursor.so",
+          "cursor.com",
           "aider.chat",
-          "stackbench.ai"
+          "stackbench.ai",
         ];
 
         const state = {
