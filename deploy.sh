@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="git@github.com:mestachs/hn-o-ai.git"  # change this
+REPO_URL="git@github.com:mestachs/hn.git"  # change this
 BRANCH="gh-pages"
 BUILD_DIR="/tmp/hn-noai-deploy"
 
